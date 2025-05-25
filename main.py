@@ -119,16 +119,15 @@ class WhisperXGUI:
         # Device selection
         self.device_label = ttk.Label(self.options_frame, text=self.translate("device_label"))
         self.device_label.pack(anchor=tk.W, pady=2)
-        self.available_devices = ["cpu"]
+        self.available_devices = ["CPU"]
         if torch.cuda.is_available():
-            for i in range(torch.cuda.device_count()):
-                self.available_devices.append(torch.cuda.get_device_name(i))
+            self.available_devices.append("GPU")
         self.device_combobox = ttk.Combobox(self.options_frame, values=self.available_devices)
         
-        # Set initial device based on saved settings, defaulting to "cpu" if not found or device not available
-        initial_device_name = self.settings.get('last_device', 'cpu')
+        # Set initial device based on saved settings, defaulting to "CPU" if not found or device not available
+        initial_device_name = self.settings.get('last_device', 'CPU')
         if initial_device_name not in self.available_devices:
-            initial_device_name = 'cpu' # Fallback to CPU if saved device is not available
+            initial_device_name = 'CPU' # Fallback to CPU if saved device is not available
         self.device_combobox.set(initial_device_name)
         self.device_combobox.pack(fill=tk.X, pady=2)
 
@@ -365,23 +364,15 @@ class WhisperXGUI:
         current_device = "cpu"
         self.current_compute_type = "int8" # Default to CPU and int8
 
-        if "cuda" in selected_device_display_name and torch.cuda.is_available():
-            # Find the index of the selected GPU name in available_devices
-            try:
-                device_index = self.available_devices.index(selected_device_display_name) - 1 # -1 because "cpu" is at index 0
-                current_device = f"cuda:{device_index}"
-                self.current_compute_type = "float16" # Use float16 for CUDA
-            except ValueError:
-                # Fallback to CPU if the selected GPU name is not found (shouldn't happen if populated correctly)
-                current_device = "cpu"
-                self.current_compute_type = "int8"
-        elif selected_device_display_name == "cpu":
-            current_device = "cpu"
-            self.current_compute_type = "int8"
-        else: # Fallback for any unexpected device selection
+        if selected_device_display_name == "GPU" and torch.cuda.is_available():
+            current_device = "cuda"
+            self.current_compute_type = "float16" # Use float16 for CUDA
+        else: # Fallback to CPU if "GPU" not selected or CUDA not available
             current_device = "cpu"
             self.current_compute_type = "int8"
 
+        # print(current_device)
+        
         # Ensure models directory exists
         model_dir = "./models"
         if not os.path.exists(model_dir):
@@ -408,7 +399,8 @@ class WhisperXGUI:
                 current_device, # Use current_device here
                 compute_type=self.current_compute_type, # Use self.current_compute_type here
                 language=language_code if language_code != "auto" else None,
-                download_root=model_dir # Specify model download directory
+                download_root=model_dir, # Specify model download directory
+                asr_options={"initial_prompt": initial_prompt}
             )
             self._loaded_model_name = model_name # Store model name for caching
             self._loaded_device = current_device # Store device for caching
@@ -418,8 +410,6 @@ class WhisperXGUI:
         self.update_progress(20, 100, self.translate("transcribing_audio"))
         
         transcribe_kwargs = {"batch_size": 8, "verbose": True}
-        if initial_prompt:
-            transcribe_kwargs["initial_prompt"] = initial_prompt
         
         chunk_size = self.settings.get('chunk_size', 5) # Get chunk_size from settings
         transcribe_kwargs["chunk_size"] = chunk_size
@@ -446,7 +436,6 @@ class WhisperXGUI:
                 audio,              # audio waveform (numpy array from whisperx.load_audio)
                 current_device,     # device string ("cuda:0" or "cpu")
                 return_char_alignments=False,
-                # print_progress=False # print_progress 參數可能在新版 whisperx 中已移除或預設行為改變，可以先移除看看
             )
 
         if diarization_enabled:
@@ -458,7 +447,7 @@ class WhisperXGUI:
                 # Check for cancellation before loading diarization model
                 if self._transcription_cancelled:
                     raise Exception(self.translate("transcription_cancelled_by_user_short"))
-
+                
                 self.diarization_pipeline = DiarizationPipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=hf_token, cache_dir="./models")
                 self.diarization_pipeline.to(torch.device(current_device)) # Use current_device here
 
@@ -470,12 +459,12 @@ class WhisperXGUI:
 
             diarize_segments = self.diarization_pipeline(audio_path)
 
-            # Convert pyannote Annotation to a list of dictionaries for whisperx
-            diarize_result = []
-            for segment, track, speaker in diarize_segments.itertracks(yield_label=True):
-                diarize_result.append({"segment": Segment(segment.start, segment.end), "label": speaker})
+            # # Convert pyannote Annotation to a list of dictionaries for whisperx
+            # diarize_result = []
+            # for segment, track, speaker in diarize_segments.itertracks(yield_label=True):
+            #     diarize_result.append({"segment": Segment(segment.start, segment.end), "label": speaker})
 
-            result = whisperx.assign_word_speakers(diarize_result, result)
+            result = whisperx.assign_word_speakers(diarize_segments, result)
 
             # Format output with speakers
             formatted_segments = []
