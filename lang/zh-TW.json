@@ -59,5 +59,6 @@
     "performing_speaker_diarization": "正在執行語者分離...",
     "hf_token_required_error": "語者分離需要 Hugging Face Token。請在設定中設定。",
     "settings_error_title": "設定錯誤",
-    "settings_error_message": "無法載入 settings.json。它可能已損壞。正在使用預設設定。"
+    "settings_error_message": "無法載入 settings.json。它可能已損壞。正在使用預設設定。",
+    "gui_language_label": "介面語言"
 }

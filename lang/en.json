@@ -59,5 +59,6 @@
     "performing_speaker_diarization": "Performing speaker diarization...",
     "hf_token_required_error": "Hugging Face Token is required for speaker diarization. Please set it in settings.",
     "settings_error_title": "Settings Error",
-    "settings_error_message": "Could not load settings.json. It might be corrupted. Using default settings."
+    "settings_error_message": "Could not load settings.json. It might be corrupted. Using default settings.",
+    "gui_language_label": "GUI Language"
 }
