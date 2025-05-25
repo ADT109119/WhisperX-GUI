@@ -57,8 +57,8 @@ class WhisperXGUI:
 
         self.add_files_button = ttk.Button(self.file_frame, text=self.translate("add_files_button"), command=self.add_files, bootstyle="primary")
         self.add_files_button.pack(side=tk.TOP, padx=5, pady=5)
-        self.clear_files_button = ttk.Button(self.file_frame, text=self.translate("clear_files_button"), command=self.clear_files, bootstyle="danger")
-        self.clear_files_button.pack(side=tk.TOP, padx=5, pady=5)
+        self.delete_selected_files_button = ttk.Button(self.file_frame, text=self.translate("delete_selected_files_button"), command=self.delete_selected_files, bootstyle="danger")
+        self.delete_selected_files_button.pack(side=tk.TOP, padx=5, pady=5)
 
         # Options Frame
         self.options_frame = ttk.LabelFrame(self.main_frame, text=self.translate("options_frame_text"), padding="10")
@@ -105,9 +105,16 @@ class WhisperXGUI:
 
         self.model_label = ttk.Label(self.options_frame, text=self.translate("model_label"))
         self.model_label.pack(anchor=tk.W, pady=2)
-        self.model_combobox = ttk.Combobox(self.options_frame, values=["tiny", "base", "small", "medium", "large-v2", "large-v3"])
+        self.model_combobox = ttk.Combobox(self.options_frame, values=["tiny", "base", "small", "medium", "large", "large-v2", "large-v3", "turbo"])
         self.model_combobox.set(self.settings.get('last_model', 'base'))
         self.model_combobox.pack(fill=tk.X, pady=2)
+
+        # Initial Prompt input
+        self.initial_prompt_label = ttk.Label(self.options_frame, text=self.translate("initial_prompt_label"))
+        self.initial_prompt_label.pack(anchor=tk.W, pady=2)
+        self.initial_prompt_entry = ttk.Entry(self.options_frame)
+        self.initial_prompt_entry.insert(0, self.settings.get('initial_prompt', ''))
+        self.initial_prompt_entry.pack(fill=tk.X, pady=2)
 
         # Device selection
         self.device_label = ttk.Label(self.options_frame, text=self.translate("device_label"))
@@ -142,11 +149,17 @@ class WhisperXGUI:
         self.output_frame = ttk.LabelFrame(self.main_frame, text=self.translate("output_area_frame_text"), padding="10")
         self.output_frame.pack(fill=tk.BOTH, expand=True, pady=10)
 
-        self.output_text = tk.Text(self.output_frame, wrap=tk.WORD, height=10, state=tk.DISABLED) # Make text read-only
-        self.output_text.pack(fill=tk.BOTH, expand=True)
-        self.output_text_scrollbar = ttk.Scrollbar(self.output_frame, orient="vertical", command=self.output_text.yview)
+        # Scrollbar first, packed to the right
+        self.output_text_scrollbar = ttk.Scrollbar(self.output_frame, orient="vertical")
         self.output_text_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.output_text.config(yscrollcommand=self.output_text_scrollbar.set)
+
+        # Text widget next, filling the remaining space
+        self.output_text = tk.Text(self.output_frame, wrap=tk.WORD, height=10, state=tk.DISABLED,
+                                   yscrollcommand=self.output_text_scrollbar.set) # Link scrollbar here
+        self.output_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True) # Pack to left or just fill
+
+        # Configure scrollbar's command after text widget is created
+        self.output_text_scrollbar.config(command=self.output_text.yview)
 
         # Progress Bar
         self.progress_frame = ttk.LabelFrame(self.main_frame, text=self.translate("progress_frame_text"), padding="10")
@@ -191,8 +204,10 @@ class WhisperXGUI:
             if file not in self.file_listbox.get(0, tk.END):
                 self.file_listbox.insert(tk.END, file)
 
-    def clear_files(self):
-        self.file_listbox.delete(0, tk.END)
+    def delete_selected_files(self):
+        selected_indices = self.file_listbox.curselection()
+        for i in reversed(selected_indices): # Delete from end to beginning to avoid index issues
+            self.file_listbox.delete(i)
 
     def start_transcription(self):
         selected_files = self.file_listbox.get(0, tk.END)
@@ -200,10 +215,10 @@ class WhisperXGUI:
             messagebox.showwarning("No Files Selected", "Please add audio/video files to transcribe.")
             return
 
-        # Save current language and model to settings
-        # Save current language, model, and device to settings
+        # Save current language, model, initial prompt, and device to settings
         self.settings['last_language'] = self.languages_map.get(self.language_combobox.get(), 'en') # Save code
         self.settings['last_model'] = self.model_combobox.get()
+        self.settings['initial_prompt'] = self.initial_prompt_entry.get() # Save initial prompt
         self.settings['last_device'] = self.device_combobox.get() # Save the display name of the device
         self.settings['diarization_enabled'] = self.diarization_var.get()
         self.save_settings()
@@ -214,6 +229,7 @@ class WhisperXGUI:
         self.output_text.insert(tk.END, f"Diarization Enabled: {self.diarization_var.get()}\n")
         self.output_text.insert(tk.END, f"Language: {self.language_combobox.get()}\n")
         self.output_text.insert(tk.END, f"Model: {self.model_combobox.get()}\n")
+        self.output_text.insert(tk.END, f"Initial Prompt: {self.initial_prompt_entry.get()}\n") # Display initial prompt
         self.output_text.insert(tk.END, f"Device: {self.device_combobox.get()}\n\n")
         self.output_text.config(state=tk.DISABLED) # Disable editing
 
@@ -221,7 +237,7 @@ class WhisperXGUI:
         self.cancel_button.config(state=tk.NORMAL) # Enable cancel button
         self.settings_button.config(state=tk.DISABLED)
         self.add_files_button.config(state=tk.DISABLED)
-        self.clear_files_button.config(state=tk.DISABLED)
+        self.delete_selected_files_button.config(state=tk.DISABLED) # Update button name
         self._transcription_cancelled = False # Reset cancellation flag
 
         # Run transcription in a separate thread to keep GUI responsive
@@ -229,9 +245,9 @@ class WhisperXGUI:
 
     def cancel_transcription(self):
         self._transcription_cancelled = True
-        self.update_progress(0, 1, "Cancelling...")
+        self.update_progress(0, 1, self.translate("cancelling_progress"))
         self.output_text.config(state=tk.NORMAL)
-        self.output_text.insert(tk.END, "\nTranscription cancellation requested. Please wait...\n")
+        self.output_text.insert(tk.END, self.translate("transcription_cancellation_requested"))
         self.output_text.config(state=tk.DISABLED)
         self.master.update_idletasks()
 
@@ -244,7 +260,7 @@ class WhisperXGUI:
             for i, file_path in enumerate(selected_files):
                 if self._transcription_cancelled:
                     self.output_text.config(state=tk.NORMAL)
-                    self.output_text.insert(tk.END, "\nTranscription cancelled by user.\n")
+                    self.output_text.insert(tk.END, self.translate("transcription_cancelled_by_user"))
                     self.output_text.config(state=tk.DISABLED)
                     break # Exit the loop if cancelled
 
@@ -270,26 +286,33 @@ class WhisperXGUI:
                         if not os.path.exists(output_dir):
                             os.makedirs(output_dir)
 
-                    output_filename = os.path.join(output_dir, f"{base_filename}.{output_format}")
+                    selected_output_formats = self.settings.get('output_formats', ['txt']) # Get selected formats
 
-                    # Handle different output formats
-                    if output_format == 'txt':
-                        with open(output_filename, "w", encoding="utf-8") as f:
-                            f.write(transcribed_result)
-                    elif output_format == 'srt':
-                        # WhisperX's align function returns segments with start/end times
-                        # We need to format these into SRT
-                        srt_content = self._format_to_srt(transcribed_result)
-                        with open(output_filename, "w", encoding="utf-8") as f:
-                            f.write(srt_content)
-                    elif output_format == 'vtt':
-                        vtt_content = self._format_to_vtt(transcribed_result)
-                        with open(output_filename, "w", encoding="utf-8") as f:
-                            f.write(vtt_content)
+                    for current_output_format in selected_output_formats:
+                        output_filename = os.path.join(output_dir, f"{base_filename}.{current_output_format}")
 
+                        # Handle different output formats
+                        if current_output_format == 'txt':
+                            # Extract text from segments for TXT output
+                            text_content = "\n".join([s["text"] for s in transcribed_result])
+                            with open(output_filename, "w", encoding="utf-8") as f:
+                                f.write(text_content)
+                        elif current_output_format == 'srt':
+                            srt_content = self._format_to_srt(transcribed_result)
+                            with open(output_filename, "w", encoding="utf-8") as f:
+                                f.write(srt_content)
+                        elif current_output_format == 'vtt':
+                            vtt_content = self._format_to_vtt(transcribed_result)
+                            with open(output_filename, "w", encoding="utf-8") as f:
+                                f.write(vtt_content)
+
+                        self.output_text.config(state=tk.NORMAL)
+                        self.output_text.insert(tk.END, f"  Transcription for {os.path.basename(file_path)} saved to {output_filename}\n")
+                        self.output_text.config(state=tk.DISABLED)
                     self.output_text.config(state=tk.NORMAL)
-                    self.output_text.insert(tk.END, f"  Transcription for {os.path.basename(file_path)} saved to {output_filename}\n\n")
+                    self.output_text.insert(tk.END, "\n") # Add an extra newline after all formats for a file
                     self.output_text.config(state=tk.DISABLED)
+
                 except Exception as e:
                     self.output_text.config(state=tk.NORMAL)
                     self.output_text.insert(tk.END, f"  Error processing {os.path.basename(file_path)}: {e}\n\n")
@@ -318,7 +341,7 @@ class WhisperXGUI:
             self.cancel_button.config(state=tk.DISABLED) # Disable cancel button
             self.settings_button.config(state=tk.NORMAL)
             self.add_files_button.config(state=tk.NORMAL)
-            self.clear_files_button.config(state=tk.NORMAL)
+            self.delete_selected_files_button.config(state=tk.NORMAL) # Update button name
             self.progress_label.config(text="Ready")
 
     def update_progress(self, value, maximum, text):
@@ -331,6 +354,7 @@ class WhisperXGUI:
         model_name = self.model_combobox.get()
         language_display_name = self.language_combobox.get()
         language_code = self.languages_map.get(language_display_name, "en") # Get code from map
+        initial_prompt = self.initial_prompt_entry.get() # Get initial prompt
         diarization_enabled = self.diarization_var.get()
         hf_token = self.settings.get('huggingface_token')
         selected_device_display_name = self.device_combobox.get()
@@ -363,7 +387,7 @@ class WhisperXGUI:
         if not os.path.exists(model_dir):
             os.makedirs(model_dir)
 
-        self.update_progress(0, 100, "Loading Whisper model...")
+        self.update_progress(0, 100, self.translate("loading_whisper_model"))
         # Check if model needs to be reloaded (different model name or device)
         if self.whisper_model is None or \
            self._loaded_model_name != model_name or \
@@ -374,6 +398,10 @@ class WhisperXGUI:
                 del self.whisper_model
                 if torch.cuda.is_available(): # Only clear cache if CUDA is available
                     torch.cuda.empty_cache()
+
+            # Check for cancellation before loading model
+            if self._transcription_cancelled:
+                raise Exception(self.translate("transcription_cancelled_by_user_short"))
 
             self.whisper_model = whisperx.load_model(
                 model_name,
@@ -387,15 +415,27 @@ class WhisperXGUI:
 
         audio = whisperx.load_audio(audio_path)
 
-        self.update_progress(20, 100, "Transcribing audio...")
-        result = self.whisper_model.transcribe(audio, batch_size=8, verbose=True)
+        self.update_progress(20, 100, self.translate("transcribing_audio"))
+        
+        transcribe_kwargs = {"batch_size": 8, "verbose": True}
+        if initial_prompt:
+            transcribe_kwargs["initial_prompt"] = initial_prompt
+        
+        chunk_size = self.settings.get('chunk_size', 5) # Get chunk_size from settings
+        transcribe_kwargs["chunk_size"] = chunk_size
+
+        result = self.whisper_model.transcribe(audio, **transcribe_kwargs)
 
         # Conditionally align for better segment timing
         if self.settings.get('realign_audio', True): # Default to True if not set
-            self.update_progress(40, 100, "Aligning transcription...")
+            self.update_progress(40, 100, self.translate("aligning_transcription"))
             # 使用者選擇的語言，或者 whisper 模型轉錄後偵測到的語言
             align_language_code = result["language"]
             model_a, metadata = whisperx.load_align_model(language_code=align_language_code, device=current_device)
+
+            # Check for cancellation before aligning
+            if self._transcription_cancelled:
+                raise Exception(self.translate("transcription_cancelled_by_user_short"))
 
             # 確保傳遞正確的參數給 align 函數
             # 參數順序: segments, alignment_model, alignment_model_metadata, audio, device
@@ -411,13 +451,23 @@ class WhisperXGUI:
 
         if diarization_enabled:
             if not hf_token:
-                raise ValueError("Hugging Face Token is required for speaker diarization. Please set it in settings.")
+                raise ValueError(self.translate("hf_token_required_error"))
             if self.diarization_pipeline is None:
-                self.update_progress(60, 100, "Loading Diarization model...")
-                self.diarization_pipeline = DiarizationPipeline("pyannote/speaker-diarization-3.1", use_auth_token=hf_token)
+                self.update_progress(60, 100, self.translate("loading_diarization_model"))
+                
+                # Check for cancellation before loading diarization model
+                if self._transcription_cancelled:
+                    raise Exception(self.translate("transcription_cancelled_by_user_short"))
+
+                self.diarization_pipeline = DiarizationPipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=hf_token, cache_dir="./models")
                 self.diarization_pipeline.to(torch.device(current_device)) # Use current_device here
 
-            self.update_progress(80, 100, "Performing speaker diarization...")
+            self.update_progress(80, 100, self.translate("performing_speaker_diarization"))
+            
+            # Check for cancellation before diarization
+            if self._transcription_cancelled:
+                raise Exception(self.translate("transcription_cancelled_by_user_short"))
+
             diarize_segments = self.diarization_pipeline(audio_path)
 
             # Convert pyannote Annotation to a list of dictionaries for whisperx
@@ -502,7 +552,7 @@ class WhisperXGUI:
     def open_settings(self):
         settings_window = tk.Toplevel(self.master)
         settings_window.title("Settings")
-        settings_window.geometry("450x450") # Increased height for better layout
+        settings_window.geometry("450x500") # Increased height for better layout
 
         settings_window.grab_set() # Make settings window modal
         settings_window.transient(self.master)
@@ -511,38 +561,53 @@ class WhisperXGUI:
         settings_frame.pack(fill=tk.BOTH, expand=True)
 
         # Hugging Face Token
-        ttk.Label(settings_frame, text="Hugging Face Token (for Pyannote):").pack(anchor=tk.W, pady=(0, 2))
+        ttk.Label(settings_frame, text=self.translate("hf_token_label")).pack(anchor=tk.W, pady=(0, 2))
         self.hf_token_entry = ttk.Entry(settings_frame)
         self.hf_token_entry.insert(0, self.settings.get('huggingface_token', ''))
         self.hf_token_entry.pack(fill=tk.X, pady=(0, 10))
 
         # Output Directory
-        ttk.Label(settings_frame, text="Output Directory:").pack(anchor=tk.W, pady=(0, 2))
+        ttk.Label(settings_frame, text=self.translate("output_directory_label")).pack(anchor=tk.W, pady=(0, 2))
         output_dir_frame = ttk.Frame(settings_frame)
         output_dir_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.output_dir_entry = ttk.Entry(output_dir_frame)
         self.output_dir_entry.insert(0, self.settings.get('output_directory', os.getcwd()))
         self.output_dir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-        ttk.Button(output_dir_frame, text="Browse", command=self.browse_output_dir, bootstyle="secondary").pack(side=tk.RIGHT)
+        ttk.Button(output_dir_frame, text=self.translate("browse_button"), command=self.browse_output_dir, bootstyle="secondary").pack(side=tk.RIGHT)
 
         # Save to input directory checkbox
         self.save_to_input_dir_var = tk.BooleanVar(value=self.settings.get('save_to_input_dir', False))
-        ttk.Checkbutton(settings_frame, text="Save output to same directory as input file", variable=self.save_to_input_dir_var).pack(anchor=tk.W, pady=(0, 10))
+        ttk.Checkbutton(settings_frame, text=self.translate("save_to_input_dir_checkbox"), variable=self.save_to_input_dir_var).pack(anchor=tk.W, pady=(0, 10))
 
-        # Output Format
-        ttk.Label(settings_frame, text="Output Format:").pack(anchor=tk.W, pady=(0, 2))
-        self.output_format_combobox = ttk.Combobox(settings_frame, values=["txt", "srt", "vtt"])
-        self.output_format_combobox.set(self.settings.get('output_format', 'txt'))
-        self.output_format_combobox.pack(fill=tk.X, pady=(0, 10))
+        # Output Formats (Checkboxes)
+        ttk.Label(settings_frame, text=self.translate("output_format_label")).pack(anchor=tk.W, pady=(0, 2))
+        
+        self.output_formats_vars = {}
+        available_formats = ["txt", "srt", "vtt"]
+        current_selected_formats = self.settings.get('output_formats', ['txt']) # Default to txt
+
+        for fmt in available_formats:
+            var = tk.BooleanVar(value=(fmt in current_selected_formats))
+            cb = ttk.Checkbutton(settings_frame, text=f".{fmt}", variable=var)
+            cb.pack(anchor=tk.W, padx=20)
+            self.output_formats_vars[fmt] = var
+        
+        ttk.Frame(settings_frame, height=10).pack() # Spacer
 
         # Re-align audio option
         self.realign_audio_var = tk.BooleanVar(value=self.settings.get('realign_audio', True))
-        ttk.Checkbutton(settings_frame, text="Re-align audio (recommended for accuracy)", variable=self.realign_audio_var).pack(anchor=tk.W, pady=(0, 2))
+        ttk.Checkbutton(settings_frame, text=self.translate("realign_audio_checkbox"), variable=self.realign_audio_var).pack(anchor=tk.W, pady=(0, 2))
         ttk.Label(settings_frame, text=self.translate("realign_audio_description"), font=("TkDefaultFont", 8)).pack(anchor=tk.W, pady=(0, 10))
 
+        # Chunk Size input
+        ttk.Label(settings_frame, text=self.translate("chunk_size_label")).pack(anchor=tk.W, pady=(0, 2))
+        self.chunk_size_entry = ttk.Entry(settings_frame)
+        self.chunk_size_entry.insert(0, str(self.settings.get('chunk_size', 5))) # Default to 25
+        self.chunk_size_entry.pack(fill=tk.X, pady=(0, 10))
+
         # Language selection for GUI
-        ttk.Label(settings_frame, text="GUI Language:").pack(anchor=tk.W, pady=(0, 2))
+        ttk.Label(settings_frame, text=self.translate("gui_language_label")).pack(anchor=tk.W, pady=(0, 2))
         self.gui_language_combobox = ttk.Combobox(settings_frame, values=["English", "繁體中文"])
         
         # Set initial value based on current_language
@@ -558,9 +623,22 @@ class WhisperXGUI:
         def save_and_close_settings():
             self.settings['huggingface_token'] = self.hf_token_entry.get()
             self.settings['output_directory'] = self.output_dir_entry.get()
-            self.settings['output_format'] = self.output_format_combobox.get()
+            
+            # Save selected output formats
+            selected_formats = [fmt for fmt, var in self.output_formats_vars.items() if var.get()]
+            self.settings['output_formats'] = selected_formats
+            
             self.settings['save_to_input_dir'] = self.save_to_input_dir_var.get()
             self.settings['realign_audio'] = self.realign_audio_var.get() # Save the new setting
+            
+            try:
+                chunk_size_val = int(self.chunk_size_entry.get())
+                if chunk_size_val <= 0:
+                    raise ValueError("Chunk size must be a positive integer.")
+                self.settings['chunk_size'] = chunk_size_val
+            except ValueError as e:
+                messagebox.showerror("Invalid Input", f"Invalid chunk size: {e}")
+                return # Do not save settings if input is invalid
             
             selected_gui_lang = self.gui_language_combobox.get()
             if selected_gui_lang == "English":
@@ -594,13 +672,14 @@ class WhisperXGUI:
         # Update file selection frame
         self.file_frame.config(text=self.translate("file_selection_frame_text"))
         self.add_files_button.config(text=self.translate("add_files_button"))
-        self.clear_files_button.config(text=self.translate("clear_files_button"))
+        self.delete_selected_files_button.config(text=self.translate("delete_selected_files_button")) # Update button name
 
         # Update options frame
         self.options_frame.config(text=self.translate("options_frame_text"))
         self.diarization_checkbox.config(text=self.translate("enable_diarization_checkbox"))
         self.language_label.config(text=self.translate("language_label"))
         self.model_label.config(text=self.translate("model_label"))
+        self.initial_prompt_label.config(text=self.translate("initial_prompt_label")) # Update initial prompt label
         self.device_label.config(text=self.translate("device_label"))
 
         # Update action buttons
