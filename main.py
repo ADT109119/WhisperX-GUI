@@ -352,149 +352,179 @@ class WhisperXGUI:
     def transcribe_audio(self, audio_path):
         model_name = self.model_combobox.get()
         language_display_name = self.language_combobox.get()
-        language_code = self.languages_map.get(language_display_name, "en") # Get code from map
-        initial_prompt = self.initial_prompt_entry.get() # Get initial prompt
+        language_code = self.languages_map.get(language_display_name, "en") # 從映射中獲取代碼
+        initial_prompt = self.initial_prompt_entry.get() # 獲取初始提示
         diarization_enabled = self.diarization_var.get()
         hf_token = self.settings.get('huggingface_token')
         selected_device_display_name = self.device_combobox.get()
-        output_format = self.settings.get('output_format', 'txt')
-        save_to_input_dir = self.settings.get('save_to_input_dir', False)
 
-        # Determine the actual device string (e.g., "cuda:0" or "cpu") for whisperx and pyannote
         current_device = "cpu"
-        self.current_compute_type = "int8" # Default to CPU and int8
+        self.current_compute_type = "int8" 
 
         if selected_device_display_name == "GPU" and torch.cuda.is_available():
             current_device = "cuda"
-            self.current_compute_type = "float16" # Use float16 for CUDA
-        else: # Fallback to CPU if "GPU" not selected or CUDA not available
+            self.current_compute_type = "float16"
+        else: 
             current_device = "cpu"
             self.current_compute_type = "int8"
-
-        # print(current_device)
         
-        # Ensure models directory exists
         model_dir = "./models"
         if not os.path.exists(model_dir):
             os.makedirs(model_dir)
 
         self.update_progress(0, 100, self.translate("loading_whisper_model"))
-        # Check if model needs to be reloaded (different model name or device)
         if self.whisper_model is None or \
            self._loaded_model_name != model_name or \
-           self._loaded_device != current_device:
+           self._loaded_device != current_device or \
+           (hasattr(self.whisper_model, 'compute_type') and self.whisper_model.compute_type != self.current_compute_type):
             
-            # Unload previous model if exists
             if self.whisper_model:
                 del self.whisper_model
-                if torch.cuda.is_available(): # Only clear cache if CUDA is available
+                if torch.cuda.is_available(): 
                     torch.cuda.empty_cache()
 
-            # Check for cancellation before loading model
             if self._transcription_cancelled:
                 raise Exception(self.translate("transcription_cancelled_by_user_short"))
 
             self.whisper_model = whisperx.load_model(
                 model_name,
-                current_device, # Use current_device here
-                compute_type=self.current_compute_type, # Use self.current_compute_type here
+                current_device, 
+                compute_type=self.current_compute_type, 
                 language=language_code if language_code != "auto" else None,
-                download_root=model_dir, # Specify model download directory
+                download_root=model_dir, 
                 asr_options={"initial_prompt": initial_prompt}
             )
-            self._loaded_model_name = model_name # Store model name for caching
-            self._loaded_device = current_device # Store device for caching
+            self._loaded_model_name = model_name 
+            self._loaded_device = current_device 
 
         audio = whisperx.load_audio(audio_path)
 
         self.update_progress(20, 100, self.translate("transcribing_audio"))
         
         transcribe_kwargs = {"batch_size": 8, "verbose": True}
-        
-        chunk_size = self.settings.get('chunk_size', 5) # Get chunk_size from settings
+
+        chunk_size = self.settings.get('chunk_size', 5) 
         transcribe_kwargs["chunk_size"] = chunk_size
 
-        result = self.whisper_model.transcribe(audio, **transcribe_kwargs)
+        asr_result_dict = self.whisper_model.transcribe(audio, **transcribe_kwargs)
+        segments_for_processing = asr_result_dict["segments"]
 
-        # Conditionally align for better segment timing
-        if self.settings.get('realign_audio', True): # Default to True if not set
+        if self.settings.get('realign_audio', True): 
             self.update_progress(40, 100, self.translate("aligning_transcription"))
             # 使用者選擇的語言，或者 whisper 模型轉錄後偵測到的語言
-            align_language_code = result["language"]
-            model_a, metadata = whisperx.load_align_model(language_code=align_language_code, device=current_device)
+            align_language_code = asr_result_dict["language"] 
+            model_a, metadata = whisperx.load_align_model(language_code=align_language_code, device=current_device, model_dir=model_dir)
 
             # Check for cancellation before aligning
             if self._transcription_cancelled:
                 raise Exception(self.translate("transcription_cancelled_by_user_short"))
 
-            # 確保傳遞正確的參數給 align 函數
-            # 參數順序: segments, alignment_model, alignment_model_metadata, audio, device
-            result = whisperx.align(
-                result["segments"], # list of transcribed segments
-                model_a,            # alignment model
-                metadata,           # alignment model metadata
-                audio,              # audio waveform (numpy array from whisperx.load_audio)
-                current_device,     # device string ("cuda:0" or "cpu")
+            aligned_segments = whisperx.align(
+                asr_result_dict["segments"], 
+                model_a,            
+                metadata,           
+                audio,              
+                current_device,     
                 return_char_alignments=False,
             )
+            segments_for_processing = aligned_segments 
+            del model_a 
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         if diarization_enabled:
             if not hf_token:
                 raise ValueError(self.translate("hf_token_required_error"))
-            if self.diarization_pipeline is None:
+            
+            if self.diarization_pipeline is None or self.diarization_pipeline.device.type != current_device:
                 self.update_progress(60, 100, self.translate("loading_diarization_model"))
-                
-                # Check for cancellation before loading diarization model
                 if self._transcription_cancelled:
                     raise Exception(self.translate("transcription_cancelled_by_user_short"))
                 
-                self.diarization_pipeline = DiarizationPipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=hf_token, cache_dir="./models")
-                self.diarization_pipeline.to(torch.device(current_device)) # Use current_device here
+                if self.diarization_pipeline and self.diarization_pipeline.device.type != current_device:
+                    del self.diarization_pipeline
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    self.diarization_pipeline = None
+
+                self.diarization_pipeline = DiarizationPipeline.from_pretrained(
+                    "pyannote/speaker-diarization-3.1", 
+                    use_auth_token=hf_token, 
+                    cache_dir=os.path.join(model_dir, "pyannote") 
+                )
+                self.diarization_pipeline.to(torch.device(current_device)) 
 
             self.update_progress(80, 100, self.translate("performing_speaker_diarization"))
-            
-            # Check for cancellation before diarization
             if self._transcription_cancelled:
                 raise Exception(self.translate("transcription_cancelled_by_user_short"))
 
-            diarize_segments = self.diarization_pipeline(audio_path)
+            diarize_output_annotation = self.diarization_pipeline(audio_path)
+            segments_with_speakers = whisperx.assign_word_speakers(diarize_output_annotation, segments_for_processing)
 
-            # # Convert pyannote Annotation to a list of dictionaries for whisperx
-            # diarize_result = []
-            # for segment, track, speaker in diarize_segments.itertracks(yield_label=True):
-            #     diarize_result.append({"segment": Segment(segment.start, segment.end), "label": speaker})
-
-            result = whisperx.assign_word_speakers(diarize_segments, result)
-
-            # Format output with speakers
+            # --- 開始修改的部分 ---
             formatted_segments = []
             current_speaker = None
             current_text = ""
             current_start = None
             current_end = None
 
-            for segment in result["segments"]:
-                speaker = segment.get("speaker", "UNKNOWN")
-                text = segment["text"].strip()
-                start = segment["start"]
-                end = segment["end"]
+            for idx, segment_item in enumerate(segments_with_speakers):
+                # 檢查 segment_item 是否為字典類型
+                if not isinstance(segment_item, dict):
+                    # 如果不是字典，則在GUI上顯示警告並跳過此項目
+                    self.output_text.config(state=tk.NORMAL)
+                    self.output_text.insert(tk.END, f"  警告: 轉錄過程中發現無效的片段資料 (索引 {idx}, 類型: {type(segment_item)}, 內容: {str(segment_item)[:100]})，已跳過。\n")
+                    self.output_text.config(state=tk.DISABLED)
+                    self.master.update_idletasks() # 確保GUI即時更新
+                    continue
 
-                if speaker != current_speaker:
-                    if current_text:
+                # 現在 segment_item 確定是一個字典
+                speaker = segment_item.get("speaker", "UNKNOWN") # 安全地獲取 'speaker'
+                text_content = segment_item.get("text") # 安全地獲取 'text'
+
+                # 檢查文字內容是否有效 (非None且去除空白後不為空)
+                if text_content is None or not text_content.strip():
+                    # print(f"Skipping segment at index {idx} due to empty or None text: {segment_item}") # 可選的調試輸出
+                    continue
+                
+                text = text_content.strip() # 去除文字前後空白
+                
+                start_time = segment_item.get("start") # 安全地獲取 'start'
+                end_time = segment_item.get("end")     # 安全地獲取 'end'
+
+                # 檢查時間戳是否存在
+                if start_time is None or end_time is None:
+                    self.output_text.config(state=tk.NORMAL)
+                    self.output_text.insert(tk.END, f"  警告: 片段 (索引 {idx}) 缺少開始或結束時間，已跳過。內容: {text[:50]}...\n")
+                    self.output_text.config(state=tk.DISABLED)
+                    self.master.update_idletasks()
+                    continue
+
+                # 片段合併邏輯 (與之前類似，可根據需要微調合併條件)
+                if current_speaker is None: # 第一個有效片段
+                    current_speaker = speaker
+                    current_text = text
+                    current_start = start_time
+                    current_end = end_time
+                # 考慮將同一語者，且時間間隔不大的片段合併 (例如2秒內)
+                elif speaker == current_speaker and start_time <= (current_end + 2.0): 
+                    current_text += " " + text
+                    current_end = end_time # 更新結束時間
+                else: # 語者變更，或時間間隔過大
+                    if current_text: # 先儲存前一個語者的完整片段
                         formatted_segments.append({
                             "speaker": current_speaker,
-                            "text": current_text.strip(),
+                            "text": current_text.strip(), # 確保最終文字也去除空白
                             "start": current_start,
                             "end": current_end
                         })
+                    # 開始記錄新的語者片段
                     current_speaker = speaker
                     current_text = text
-                    current_start = start
-                    current_end = end
-                else:
-                    current_text += " " + text
-                    current_end = end # Extend the end time
-
+                    current_start = start_time
+                    current_end = end_time
+            
+            # 迴圈結束後，儲存最後一個正在處理的片段
             if current_text:
                 formatted_segments.append({
                     "speaker": current_speaker,
@@ -502,13 +532,24 @@ class WhisperXGUI:
                     "start": current_start,
                     "end": current_end
                 })
-            
-            # Return the structured segments for formatting
+            # --- 結束修改的部分 ---
             return formatted_segments
         else:
-            # Return structured segments without speaker info
-            return [{"text": segment["text"], "start": segment["start"], "end": segment["end"]} for segment in result["segments"]]
-
+            # 非語者分段輸出：確保只處理有效的字典片段，並過濾掉空文字
+            clean_segments = []
+            for segment_item in segments_for_processing:
+                if not isinstance(segment_item, dict):
+                    # 可以選擇性地在此處也加入警告
+                    continue
+                text_content = segment_item.get("text")
+                if text_content and text_content.strip():
+                    clean_segments.append({
+                        "text": text_content.strip(), 
+                        "start": segment_item.get("start"), 
+                        "end": segment_item.get("end")
+                    })
+            return clean_segments
+        
     def _format_to_srt(self, segments):
         srt_content = []
         for i, segment in enumerate(segments):
