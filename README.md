@@ -10,7 +10,7 @@
 *   [x] **多檔案處理**: 批次轉錄多個檔案。
 *   [x] **語言選擇**: 選擇多種語言進行轉錄，或讓 WhisperX 自動偵測。
 *   [x] **Whisper 模型選擇**: 根據您的準確性和效能需求，選擇不同的 WhisperX 模型 (tiny, base, small, medium, large, large-v2, large-v3, turbo)。
-*   [ ] **說話者分離 (Diarization)**: 啟用說話者分離以識別和標記音訊中的不同說話者（需要 Hugging Face 權杖下載語者辨識模型）。尚有 Bug 待修復。
+*   [x] **語者分離 (Diarization)**: 啟用語者分離以識別和標記音訊中的不同說話者（需要 Hugging Face 權杖下載語者辨識模型）。
 *   [x] **詞級時間戳**: 獲得精確的詞級時間戳，以實現更好的對齊。
 *   [x] **多種輸出格式**: 將轉錄內容儲存為 TXT、SRT 和 VTT 格式。
 *   [x] **可自訂設定**: 配置輸出目錄、初始提示、裝置 (CPU/GPU) 和其他進階選項。
@@ -27,7 +27,7 @@
 
 *   **Python 3.8+**: 確保您已安裝 Python。您可以從 [python.org](https://www.python.org/downloads/) 下載。
 *   **Git** (可選): 克隆儲存庫所需。從 [git-scm.com](https://git-scm.com/downloads) 下載，只想要使用沒有要開發的人，可忽略此項，直接用 GitHub 的下載功能。
-*   **FFmpeg**: 音訊處理所需。從 [ffmpeg.org](https://ffmpeg.org/download.html) 下載並確保其已添加到系統的 PATH 中，可參考[此篇文章](https://the-walking-fish.com/p/install-ffmpeg-on-windows/) (https://the-walking-fish.com/p/install-ffmpeg-on-windows/)，或[此部影片](https://www.youtube.com/watch?v=ERee4DY2LQ8) (https://www.youtube.com/watch?v=ERee4DY2LQ8) 的教學。
+*   **FFmpeg**: 音訊處理所需。從 [ffmpeg.org](https://ffmpeg.org/download.html) 下載並確保其已添加到系統的 PATH 中，可參考[此篇文章](https://the-walking-fish.com/p/install-ffmpeg-on-windows/) (https://the-walking-fish.com/p/install-ffmpeg-on-windows/) ，或[此部影片](https://www.youtube.com/watch?v=ERee4DY2LQ8) (https://www.youtube.com/watch?v=ERee4DY2LQ8) 的教學。
 
 ### 步驟
 

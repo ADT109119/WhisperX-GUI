@@ -2,6 +2,7 @@ models
 output
 settings.json
 *.dll
+*.zip
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
