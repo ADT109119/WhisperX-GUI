@@ -102,7 +102,7 @@ class WhisperXGUI:
 
         self.model_label = ttk.Label(self.options_frame, text=self.translate("model_label"))
         self.model_label.pack(anchor=tk.W, pady=2)
-        self.model_combobox = ttk.Combobox(self.options_frame, values=["tiny", "base", "small", "medium", "large-v2", "large-v3", "distil-large-v2"], state="readonly") 
+        self.model_combobox = ttk.Combobox(self.options_frame, values=["tiny", "base", "small", "medium", "large", "large-v2", "large-v3", "turbo", "distil-large-v2"], state="readonly") 
         self.model_combobox.set(self.settings.get('last_model', 'base'))
         self.model_combobox.pack(fill=tk.X, pady=2)
 
