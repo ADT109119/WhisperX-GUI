@@ -26,12 +26,12 @@
 ### 先決條件
 
 *   **Python 3.8+**: 確保您已安裝 Python。您可以從 [python.org](https://www.python.org/downloads/) 下載。
-*   **Git** (可選): 克隆儲存庫所需。從 [git-scm.com](https://git-scm.com/downloads) 下載，只想要使用沒有要開發的人，可忽略此項，直接用 GitHub 的下載功能。
+*   **Git** (可選): 複製儲存庫所需。從 [git-scm.com](https://git-scm.com/downloads) 下載，只想要使用沒有要開發的人，可忽略此項，直接用 GitHub 的下載功能。
 *   **FFmpeg**: 音訊處理所需。從 [ffmpeg.org](https://ffmpeg.org/download.html) 下載並確保其已添加到系統的 PATH 中，可參考[此篇文章](https://the-walking-fish.com/p/install-ffmpeg-on-windows/) (https://the-walking-fish.com/p/install-ffmpeg-on-windows/) ，或[此部影片](https://www.youtube.com/watch?v=ERee4DY2LQ8) (https://www.youtube.com/watch?v=ERee4DY2LQ8) 的教學。
 
 ### 步驟
 
-1.  **克隆儲存庫**:
+1.  **複製儲存庫**:
     ```bash
     git clone https://github.com/ADT109119/WhisperX-GUI.git
     cd WhisperX-GUI
